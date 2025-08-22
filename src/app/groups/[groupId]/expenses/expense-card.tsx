@@ -22,9 +22,13 @@ function Participants({ expense }: { expense: Expense }) {
       <strong>{paidFor.participant.name}</strong>
     </Fragment>
   ))
+  const paidByNames =
+    expense.payers.length > 0
+      ? expense.payers.map((p) => p.participant.name).join(', ')
+      : expense.paidBy.name
   const participants = t.rich(key, {
     strong: (chunks) => <strong>{chunks}</strong>,
-    paidBy: expense.paidBy.name,
+    paidBy: paidByNames,
     paidFor: () => paidFor,
     forCount: expense.paidFor.length,
   })

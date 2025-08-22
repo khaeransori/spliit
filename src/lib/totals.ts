@@ -1,8 +1,15 @@
-import { getGroupExpenses } from '@/lib/api'
+import { SplitMode } from '@prisma/client'
 
-export function getTotalGroupSpending(
-  expenses: NonNullable<Awaited<ReturnType<typeof getGroupExpenses>>>,
-): number {
+type Expense = {
+  amount: number
+  paidBy: { id: string }
+  payers: { participant: { id: string }; amount: number }[]
+  paidFor: { participant: { id: string }; shares: number }[]
+  splitMode: SplitMode
+  isReimbursement: boolean
+}
+
+export function getTotalGroupSpending(expenses: Expense[]): number {
   return expenses.reduce(
     (total, expense) =>
       expense.isReimbursement ? total : total + expense.amount,
@@ -12,18 +19,19 @@ export function getTotalGroupSpending(
 
 export function getTotalActiveUserPaidFor(
   activeUserId: string | null,
-  expenses: NonNullable<Awaited<ReturnType<typeof getGroupExpenses>>>,
+  expenses: Expense[],
 ): number {
-  return expenses.reduce(
-    (total, expense) =>
-      expense.paidBy.id === activeUserId && !expense.isReimbursement
-        ? total + expense.amount
-        : total,
-    0,
-  )
+  return expenses.reduce((total, expense) => {
+    if (expense.isReimbursement) return total
+    if (expense.payers.length > 0) {
+      const payerTotal = expense.payers
+        .filter((p) => p.participant.id === activeUserId)
+        .reduce((sum, p) => sum + p.amount, 0)
+      return total + payerTotal
+    }
+    return expense.paidBy.id === activeUserId ? total + expense.amount : total
+  }, 0)
 }
-
-type Expense = NonNullable<Awaited<ReturnType<typeof getGroupExpenses>>>[number]
 
 export function calculateShare(
   participantId: string | null,
@@ -67,7 +75,7 @@ export function calculateShare(
 
 export function getTotalActiveUserShare(
   activeUserId: string | null,
-  expenses: NonNullable<Awaited<ReturnType<typeof getGroupExpenses>>>,
+  expenses: Expense[],
 ): number {
   const total = expenses.reduce(
     (sum, expense) => sum + calculateShare(activeUserId, expense),

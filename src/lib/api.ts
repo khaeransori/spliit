@@ -41,7 +41,7 @@ export async function createExpense(
   if (!group) throw new Error(`Invalid group ID: ${groupId}`)
 
   for (const participant of [
-    expenseFormValues.paidBy,
+    ...expenseFormValues.payers.map((p) => p.participant),
     ...expenseFormValues.paidFor.map((p) => p.participant),
   ]) {
     if (!group.participants.some((p) => p.id === participant))
@@ -71,7 +71,13 @@ export async function createExpense(
       categoryId: expenseFormValues.category,
       amount: expenseFormValues.amount,
       title: expenseFormValues.title,
-      paidById: expenseFormValues.paidBy,
+      paidById: expenseFormValues.payers[0].participant,
+      payers: {
+        create: expenseFormValues.payers.map((payer) => ({
+          participantId: payer.participant,
+          amount: payer.amount,
+        })),
+      },
       splitMode: expenseFormValues.splitMode,
       recurrenceRule: expenseFormValues.recurrenceRule,
       recurringExpenseLink: {
@@ -128,7 +134,9 @@ export async function getGroupExpensesParticipants(groupId: string) {
   return Array.from(
     new Set(
       expenses.flatMap((e) => [
-        e.paidBy.id,
+        ...(e.payers.length
+          ? e.payers.map((p) => p.participant.id)
+          : [e.paidBy.id]),
         ...e.paidFor.map((pf) => pf.participant.id),
       ]),
     ),
@@ -160,7 +168,7 @@ export async function updateExpense(
   if (!existingExpense) throw new Error(`Invalid expense ID: ${expenseId}`)
 
   for (const participant of [
-    expenseFormValues.paidBy,
+    ...expenseFormValues.payers.map((p) => p.participant),
     ...expenseFormValues.paidFor.map((p) => p.participant),
   ]) {
     if (!group.participants.some((p) => p.id === participant))
@@ -207,7 +215,14 @@ export async function updateExpense(
       amount: expenseFormValues.amount,
       title: expenseFormValues.title,
       categoryId: expenseFormValues.category,
-      paidById: expenseFormValues.paidBy,
+      paidById: expenseFormValues.payers[0].participant,
+      payers: {
+        deleteMany: {},
+        create: expenseFormValues.payers.map((payer) => ({
+          participantId: payer.participant,
+          amount: payer.amount,
+        })),
+      },
       splitMode: expenseFormValues.splitMode,
       recurrenceRule: expenseFormValues.recurrenceRule,
       paidFor: {
@@ -344,6 +359,12 @@ export async function getGroupExpenses(
       id: true,
       isReimbursement: true,
       paidBy: { select: { id: true, name: true } },
+      payers: {
+        select: {
+          participant: { select: { id: true, name: true } },
+          amount: true,
+        },
+      },
       paidFor: {
         select: {
           participant: { select: { id: true, name: true } },
@@ -376,6 +397,7 @@ export async function getExpense(groupId: string, expenseId: string) {
     where: { id: expenseId },
     include: {
       paidBy: true,
+      payers: { include: { participant: true } },
       paidFor: true,
       category: true,
       documents: true,

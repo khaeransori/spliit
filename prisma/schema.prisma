@@ -29,6 +29,7 @@ model Participant {
   groupId         String
   expensesPaidBy  Expense[]
   expensesPaidFor ExpensePaidFor[]
+  expensesContributed ExpensePayer[]
 }
 
 model Category {
@@ -48,6 +49,7 @@ model Expense {
   amount          Int
   paidBy          Participant       @relation(fields: [paidById], references: [id], onDelete: Cascade)
   paidById        String
+  payers          ExpensePayer[]
   paidFor         ExpensePaidFor[]
   groupId         String
   isReimbursement Boolean           @default(false)
@@ -106,6 +108,16 @@ model ExpensePaidFor {
   expenseId     String
   participantId String
   shares        Int         @default(1)
+
+  @@id([expenseId, participantId])
+}
+
+model ExpensePayer {
+  expense       Expense     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  expenseId     String
+  participantId String
+  amount        Int
 
   @@id([expenseId, participantId])
 }

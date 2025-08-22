@@ -54,7 +54,26 @@ export const expenseFormSchema = z
       )
       .refine((amount) => amount != 0, 'amountNotZero')
       .refine((amount) => amount <= 10_000_000_00, 'amountTenMillion'),
-    paidBy: z.string({ required_error: 'paidByRequired' }),
+    payers: z
+      .array(
+        z.object({
+          participant: z.string(),
+          amount: z.union([
+            z.number(),
+            z.string().transform((value, ctx) => {
+              const normalizedValue = value.replace(/,/g, '.')
+              const valueAsNumber = Number(normalizedValue)
+              if (Number.isNaN(valueAsNumber))
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message: 'invalidNumber',
+                })
+              return Math.round(valueAsNumber * 100)
+            }),
+          ]),
+        }),
+      )
+      .min(1, 'paidByRequired'),
     paidFor: z
       .array(
         z.object({
@@ -112,6 +131,22 @@ export const expenseFormSchema = z
       .default('NONE'),
   })
   .superRefine((expense, ctx) => {
+    const payerSum = expense.payers.reduce(
+      (total, { amount }) =>
+        total +
+        (typeof amount === 'number'
+          ? amount
+          : Math.round(Number(amount) * 100)),
+      0,
+    )
+    if (payerSum !== expense.amount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'amountSum',
+        path: ['payers'],
+      })
+    }
+
     let sum = 0
     for (const { shares } of expense.paidFor) {
       sum +=

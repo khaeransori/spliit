@@ -1,5 +1,4 @@
-import { getGroupExpenses } from '@/lib/api'
-import { Participant } from '@prisma/client'
+import { Participant, SplitMode } from '@prisma/client'
 import { match } from 'ts-pattern'
 
 export type Balances = Record<
@@ -7,23 +6,40 @@ export type Balances = Record<
   { paid: number; paidFor: number; total: number }
 >
 
+type Expense = {
+  amount: number
+  paidBy: { id: string }
+  payers: { participant: { id: string }; amount: number }[]
+  paidFor: { participant: { id: string }; shares: number }[]
+  splitMode: SplitMode
+  isReimbursement: boolean
+}
+
 export type Reimbursement = {
   from: Participant['id']
   to: Participant['id']
   amount: number
 }
 
-export function getBalances(
-  expenses: NonNullable<Awaited<ReturnType<typeof getGroupExpenses>>>,
-): Balances {
+export function getBalances(expenses: Expense[]): Balances {
   const balances: Balances = {}
 
   for (const expense of expenses) {
-    const paidBy = expense.paidBy.id
     const paidFors = expense.paidFor
 
-    if (!balances[paidBy]) balances[paidBy] = { paid: 0, paidFor: 0, total: 0 }
-    balances[paidBy].paid += expense.amount
+    if (expense.payers.length > 0) {
+      for (const payer of expense.payers) {
+        const payerId = payer.participant.id
+        if (!balances[payerId])
+          balances[payerId] = { paid: 0, paidFor: 0, total: 0 }
+        balances[payerId].paid += payer.amount
+      }
+    } else {
+      const paidBy = expense.paidBy.id
+      if (!balances[paidBy])
+        balances[paidBy] = { paid: 0, paidFor: 0, total: 0 }
+      balances[paidBy].paid += expense.amount
+    }
 
     const totalPaidForShares = paidFors.reduce(
       (sum, paidFor) => sum + paidFor.shares,

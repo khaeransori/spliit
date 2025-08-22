@@ -158,20 +158,19 @@ export function ExpenseForm({
   const isCreate = expense === undefined
   const searchParams = useSearchParams()
 
-  const getSelectedPayer = (field?: { value: string }) => {
-    if (isCreate && typeof window !== 'undefined') {
-      const activeUser = localStorage.getItem(`${group.id}-activeUser`)
-      if (activeUser && activeUser !== 'None' && field?.value === undefined) {
-        return activeUser
-      }
-    }
-    return field?.value
-  }
-
   const getSelectedRecurrenceRule = (field?: { value: string }) => {
     return field?.value as RecurrenceRule
   }
   const defaultSplittingOptions = getDefaultSplittingOptions(group)
+  const getDefaultPayerId = () => {
+    if (isCreate && typeof window !== 'undefined') {
+      const activeUser = localStorage.getItem(`${group.id}-activeUser`)
+      if (activeUser && activeUser !== 'None') {
+        return activeUser
+      }
+    }
+    return undefined
+  }
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: expense
@@ -180,7 +179,18 @@ export function ExpenseForm({
           expenseDate: expense.expenseDate ?? new Date(),
           amount: String(expense.amount / 100) as unknown as number, // hack
           category: expense.categoryId,
-          paidBy: expense.paidById,
+          payers:
+            expense.payers.length > 0
+              ? expense.payers.map(({ participant, amount }) => ({
+                  participant: participant.id,
+                  amount: String(amount / 100) as unknown as number,
+                }))
+              : [
+                  {
+                    participant: expense.paidById,
+                    amount: String(expense.amount / 100) as unknown as number,
+                  },
+                ],
           paidFor: expense.paidFor.map(({ participantId, shares }) => ({
             participant: participantId,
             shares: String(shares / 100) as unknown as number,
@@ -200,7 +210,14 @@ export function ExpenseForm({
             (Number(searchParams.get('amount')) || 0) / 100,
           ) as unknown as number, // hack
           category: 1, // category with Id 1 is Payment
-          paidBy: searchParams.get('from') ?? undefined,
+          payers: [
+            {
+              participant: searchParams.get('from') ?? '',
+              amount: String(
+                (Number(searchParams.get('amount')) || 0) / 100,
+              ) as unknown as number,
+            },
+          ],
           paidFor: [
             searchParams.get('to')
               ? {
@@ -227,7 +244,12 @@ export function ExpenseForm({
             : 0, // category with Id 0 is General
           // paid for all, split evenly
           paidFor: defaultSplittingOptions.paidFor,
-          paidBy: getSelectedPayer(),
+          payers: [
+            {
+              participant: getDefaultPayerId() ?? '',
+              amount: (searchParams.get('amount') || 0) as unknown as number,
+            },
+          ],
           isReimbursement: false,
           splitMode: defaultSplittingOptions.splitMode,
           saveDefaultSplittingOptions: false,
@@ -465,34 +487,6 @@ export function ExpenseForm({
 
             <FormField
               control={form.control}
-              name="paidBy"
-              render={({ field }) => (
-                <FormItem className="sm:order-5">
-                  <FormLabel>{t(`${sExpense}.paidByField.label`)}</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={getSelectedPayer(field)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a participant" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {group.participants.map(({ id, name }) => (
-                        <SelectItem key={id} value={id}>
-                          {name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    {t(`${sExpense}.paidByField.description`)}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
               name="notes"
               render={({ field }) => (
                 <FormItem className="sm:order-6">
@@ -537,6 +531,126 @@ export function ExpenseForm({
                     {t(`${sExpense}.recurrenceRule.description`)}
                   </FormDescription>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+        </Card>
+
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>{t(`${sExpense}.paidByField.label`)}</CardTitle>
+            <CardDescription>
+              {t(`${sExpense}.paidByField.description`)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FormField
+              control={form.control}
+              name="payers"
+              render={() => (
+                <FormItem className="sm:order-5 row-span-2 space-y-0">
+                  {group.participants.map(({ id, name }) => (
+                    <FormField
+                      key={id}
+                      control={form.control}
+                      name="payers"
+                      render={({ field }) => {
+                        const index = field.value.findIndex(
+                          (p: { participant: string }) => p.participant === id,
+                        )
+                        const checked = index !== -1
+                        return (
+                          <div
+                            data-id={`${id}`}
+                            className="flex items-center border-t last-of-type:border-b -mx-6 px-6 py-3"
+                          >
+                            <FormItem className="flex-1 flex flex-row items-start space-x-3 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(c) => {
+                                    const options = {
+                                      shouldDirty: true,
+                                      shouldTouch: true,
+                                      shouldValidate: true,
+                                    }
+                                    c
+                                      ? form.setValue(
+                                          'payers',
+                                          [
+                                            ...field.value,
+                                            {
+                                              participant: id,
+                                              amount: '0' as unknown as number,
+                                            },
+                                          ],
+                                          options,
+                                        )
+                                      : form.setValue(
+                                          'payers',
+                                          field.value.filter(
+                                            (v: { participant: string }) =>
+                                              v.participant !== id,
+                                          ),
+                                          options,
+                                        )
+                                  }}
+                                />
+                              </FormControl>
+                              <FormLabel className="text-sm font-normal flex-1">
+                                {name}
+                              </FormLabel>
+                            </FormItem>
+                            {checked && (
+                              <FormField
+                                name={`payers[${index}].amount` as const}
+                                render={() => (
+                                  <FormControl>
+                                    <Input
+                                      className="text-base w-24"
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={field.value[index].amount}
+                                      onChange={(event) => {
+                                        const options = {
+                                          shouldDirty: true,
+                                          shouldTouch: true,
+                                          shouldValidate: true,
+                                        }
+                                        form.setValue(
+                                          'payers',
+                                          field.value.map(
+                                            (
+                                              p: {
+                                                participant: string
+                                                amount: any
+                                              },
+                                              i: number,
+                                            ) =>
+                                              i === index
+                                                ? {
+                                                    participant: p.participant,
+                                                    amount:
+                                                      enforceCurrencyPattern(
+                                                        event.target.value,
+                                                      ),
+                                                  }
+                                                : p,
+                                          ),
+                                          options,
+                                        )
+                                      }}
+                                    />
+                                  </FormControl>
+                                )}
+                              />
+                            )}
+                          </div>
+                        )
+                      }}
+                    />
+                  ))}
                 </FormItem>
               )}
             />
